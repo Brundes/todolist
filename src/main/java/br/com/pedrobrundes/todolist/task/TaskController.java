@@ -1,5 +1,8 @@
 package br.com.pedrobrundes.todolist.task;
 
+import br.com.pedrobrundes.todolist.enumeration.TaskMessages;
+import br.com.pedrobrundes.todolist.enumeration.TestMessage;
+import br.com.pedrobrundes.todolist.errors.BadRequestException;
 import br.com.pedrobrundes.todolist.utils.Utils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,10 +26,7 @@ public class TaskController {
         var idUser = request.getAttribute("idUser");
         taskModel.setIdUser((UUID) idUser);
 
-        var currentDate = LocalDateTime.now();
-        if (currentDate.isAfter(taskModel.getStartAt()) || currentDate.isAfter(taskModel.getEndAt())){
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("A data de início / data de término deve ser maior que a data atual");
-        }
+        validatePastDate(taskModel);
 
         if (taskModel.getStartAt().isAfter(taskModel.getEndAt())){
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("A data de término tem que ser depois da data de início.");
@@ -34,6 +34,17 @@ public class TaskController {
 
         var task = this.taskRepository.save(taskModel);
         return ResponseEntity.status(HttpStatus.OK).body(task);
+    }
+
+//    TODO 1 - Mudar o retorno do método para "void"
+//    TODO 2 - Alterar de "return" para "throw BadRequestException.of(TaskMessages.CRIAR UM ENUM)
+//    TODO 3 - Criar um ENUM para lançar a mensagem de erro
+    private static ResponseEntity<String> validatePastDate(TaskModel taskModel) {
+        var currentDate = LocalDateTime.now();
+        if (currentDate.isAfter(taskModel.getStartAt()) || currentDate.isAfter(taskModel.getEndAt())){
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("A data de início / data de término deve ser maior que a data atual");
+        }
+        return null;
     }
 
     @GetMapping("/")
@@ -47,17 +58,25 @@ public class TaskController {
     public ResponseEntity update(@RequestBody TaskModel taskModel, HttpServletRequest request, @PathVariable UUID id) {
         var task = this.taskRepository.findById(id).orElse(null);
 
-        if (task == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Tarefa não encontrada");
-        }
+        validateTaskExistance(task);
 
-        var idUser = request.getAttribute("idUser");
-        if (!task.getIdUser().equals(idUser)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Usuário não tem permissão para alterar essa tarefa");
-        }
+        validateUserPermission(request, task);
 
         Utils.copyNonNullProperties(taskModel, task);
         var taskUpdated = this.taskRepository.save(task);
         return ResponseEntity.ok().body(taskUpdated);
+    }
+
+    private static void validateUserPermission(HttpServletRequest request, TaskModel task) {
+        var idUser = request.getAttribute("idUser");
+        if (!task.getIdUser().equals(idUser)) {
+            throw BadRequestException.of(TaskMessages.USER_DOES_NOT_HAVE_PERMISSION);
+        }
+    }
+
+    private static void validateTaskExistance(TaskModel taskModel) {
+        if (taskModel == null) {
+            throw BadRequestException.of(TaskMessages.TASK_NOT_FOUND);
+        }
     }
 }
